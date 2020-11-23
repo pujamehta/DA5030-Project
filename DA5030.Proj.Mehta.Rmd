@@ -1,0 +1,431 @@
+---
+title: "DA 5030 Project"
+author: "Puja Mehta"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Business Understanding
+
+**Background: **
+
+The dataset includes 30 patients with early untreated Parkinson's disease (PD), 50 patients with REM sleep behavior disorder (RBD), which are at high risk developing Parkinson's disease or other synucleinopathies; and 50 healthy controls (HC). All patients were scored clinically by a well-trained professional neurologist with experience in movement disorders. All subjects were examined during a single session with a speech specialist. All subjects performed reading of standardized, phonetically-balanced text of 80 words and monologue about their interests, job, family or current activities for approximately 90 seconds.
+
+**Project Plan:**
+
+The goal is to predict the disease categories based on different predictors in the dataset. Visualization of the data distribution, obtaining correlation between variables and detection of outliers.
+
+The data would be split into training and test set for hold out validation and k-fold cross validation method would be used while training the data.
+
+Data processing , variable tranformation, normalization, binning and variable selection would be the next steps. PCA analazyis would be carried out on the variables to analyze the variables.
+
+I would include a minimum of 3 Machine Learning models, ensemble them and compare their performace.
+The models I choose will be classification models and hence the comparision would be based on Accuracy and Kappa value.
+
+I also plan to include a model just to analyse the feature that are most important in identification of the disease category and which could then be used as biomarkers in Disease Prediction.
+
+#Data Understanding
+
+**Collection of Initial data:**
+
+Original paper: Automated analysis of connected speech reveals early biomarkers of Parkinson’s disease in patients with rapid eye movement sleep behaviour disorder by Jan Hlavnička, Roman Čmejla, Tereza Tykalová, Karel Šonka, Evžen Růžička & Jan Rusz @nature.com
+
+```{r}
+# DATA ACQUISITION
+library(readr)
+datasetn <- read.csv("Downloads/early-biomarkers-of-parkinsons-disease/dataset.csv",
+                     stringsAsFactors = F)
+
+# Removing the redundant columns
+dataset <- datasetn[,1:53]
+# Renaming the columns
+names(dataset)[1:53] <- c("Category","Age","Gender","History","OnsetAge",
+                    "Duration","AntidepressantTherapy","medication",
+                    "AntipsychoticMed","BenzodiazepineMed","LevodopaEquivalent",
+                    "Clonazepam","MotorOverviewHY","MotorOverViewUPDRS3",
+                    "Speech","FaceExpression","TremorHeadR","TremorRUER","TremorLUER",
+                    "TermorRLER","TremorLLER","TremorRUEA","TremorLUEA",
+                    "RigidityNeck","RigidityRUE","RigidityLUE","RigidityRLE","RigidityLLE",
+                    "FTapsRUE","FtapsLUE","HMoveRUE","HMoveLUE","RAMoveRUE",
+                    "RAMoveLUE","LegAgilityRLE","LegAgilityLLE","ArisingChair",
+                    "Posture","Gait","PStability","BodyBradykinesiaHypokinesia",
+                    "SpeechEntropyTime","RateofSpeech","AccSpeechTime","PauseDuration",
+                    "VoicedIntervalDuration","Gapping",
+                    "UnvoicedStopDuration","Decay","RelativeLoudness","PauseIntervalResp",
+                    "RateofSpeechResp","LatencyRespExchange" )
+
+# Obtaining the dimension of the dataset
+dim(dataset)
+
+```
+
+**Data Description:**
+```{r}
+# The dataset contains features which could be used as biomarkers in the disease category 
+# I have named the columns which makes it self explanatory
+# I will also be stressing the features which I obtain in the end of my analysis because it will be only those which have the most importance.
+colnames(dataset)
+```
+
+**Data Exploration:**
+```{r}
+head(dataset)
+tail(dataset)
+ # It is observed that the data contains missing values and it is mainly categorical features and few numeric features.
+```
+
+# Data Prepartion
+
+**Cleaning and Formatting Data:**
+
+```{r}
+# Converting the Disease categories into factors and making the categories numeric
+dataset$Category <- as.factor(dataset$Category)
+levels(dataset$Category)[1:50] <- "1" #HC
+levels(dataset$Category)[2:31] <- "2" #PD
+levels(dataset$Category)[3:52] <- "3" #RBD
+```
+
+
+```{r}
+library(Hmisc)
+# Binning the Age feature
+min(dataset$Age)
+max(dataset$Age)
+dataset$Age <- as.factor(findInterval(dataset$Age, c(20, 40, 60,80)))
+
+# Converting the Gender feature into numeric categorical data
+dataset$Gender <- as.factor(dataset$Gender)
+dataset$Gender <- as.numeric(dataset$Gender)
+# F =1
+# M =2
+
+
+# Assumption that I have considered for the missing data that there was no presence of history for the healthy individuals
+dataset[81:130,4] <- "No"
+dataset$History <- as.factor(dataset$History)
+dataset$History <- as.numeric(dataset$History)
+
+# Imputing the missing data with the mean of the existing data and binning it into numeric categorical data 
+dataset[81:130,5] <- NA
+mean.age <- round(mean(as.numeric(dataset$OnsetAge), na.rm = T))
+dataset$OnsetAge <- impute(dataset$OnsetAge,mean.age)
+dataset$OnsetAge <- as.factor(findInterval(dataset$OnsetAge, c(30,40,50,60,70)))
+
+# Imputing the missing data with the mean of the existing data and binning it into numeric categorical data 
+dataset[81:130,6] <- NA
+mean.duration <- round(mean(as.numeric(dataset$Duration), na.rm = T))
+dataset$Duration <- impute(dataset$Duration,mean.duration)
+dataset$Duration <- as.factor(findInterval(dataset$Duration, c(0,10, 20)))
+
+# Re-assigning the factor levels for a uniform data format
+dataset$AntidepressantTherapy <- as.factor(dataset$AntidepressantTherapy)
+levels(dataset$AntidepressantTherapy)[1:9]<- "1"
+levels(dataset$AntidepressantTherapy)[2]<- "0"
+
+# Re-assigning the factor levels for a uniform data format
+dataset$BenzodiazepineMed <- as.factor(dataset$BenzodiazepineMed)
+levels(dataset$BenzodiazepineMed)[1:3] <- "1"
+levels(dataset$BenzodiazepineMed)[2] <- "0"
+
+# Assumption that I have considered for the missing data that there was no presence of Speech issues for the healthy individuals
+dataset[81:130,15] <- NA 
+dataset$Speech <- impute(dataset$Speech,0)
+
+# Re-assigning the factor levels for a uniform data format
+dataset$FaceExpression <- as.factor(dataset$FaceExpression)
+levels(dataset$FaceExpression)[1:2] <- 0
+
+```
+
+**Select Data:**
+
+There is a big chunk of data which is missing in the dataset in columns between 17 and 41. Since, removing the rows gives only one disease category which would not make sense. There wasnt a time series present so the values could be carried forward. The best way to handle this chuck of missing data was to remove it. Yes, there would be a loss of data but the data quality would not be hampered this way.
+
+```{r}
+# Selecting columns which have no significant data 
+rm.col <- c(5,8,9,11,12,13,14,17:41)
+# Removing the columns with no significant data
+dataset <- dataset[-rm.col]
+# Checking for N/A values
+sum(is.na.data.frame(dataset))
+```
+
+**Integrating Data:**
+```{r}
+# Integrating categorical and numeric data in different sets
+data.cat <- dataset[1:9]
+data.num <- dataset[10:21]
+```
+
+```{r}
+library(psych)
+d.num <- cbind(data.num,dataset$Category)
+# Analysing the data based on correlation and the distribution
+pairs.panels(d.num)
+```
+
+It is observed that there is no high correlation observered in the numeric data set. The distribution is close to normal distribution but skewed in some features which wil be analysed in the later section
+
+
+**Normalizing the Data:**
+```{r}
+library(gplots)
+library(taRifx)
+library(Hmisc)
+library(psych)
+
+# Min-max Normalization will be considered
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x))) } 
+# Since the categorical data cannot be normalised only the numeric dataset is normalized
+data.n <- as.data.frame(lapply(data.num, normalize))
+summary(data.n)
+```
+
+
+```{r}
+boxplot(data.n[1:12], col = "orange", notch = T , horizontal = F,
+        names = c(1:12), 
+        xlab= "Column number for the normalized datset",
+        ylab = "Data Distribution", 
+        main = "Boxplot for the normalized data")
+```
+
+It is observed that there are few outliers that are present. Since, there are not many outliers, I choose to not eliminate them. The data is mainly normally distibuted. When I try to transform the data with square-root, log or inverse transform, there is not much improvement in the overall distribution of the data. Hence, there is no transformation carried out.
+
+**Shaping the Data:**
+```{r}
+# Obtaining the mergered, cleaned and formatted dataset for the models
+newdata <- cbind(data.cat,data.n)
+newdata <- as.data.frame(sapply(remove.factors(newdata), as.numeric))
+str(newdata)
+```
+
+# Selecting Features
+
+**Correlation:**
+
+```{r}
+# Using the method kendall for the categorical data
+cor.cat <- cor(newdata[1:9], method = "kendall")
+corrplot::corrplot(cor.cat)
+# Using the method spearman for the numeric data
+cor.num <- cor(cbind(Category = newdata$Category,newdata[10:21]), method = "spearman")
+corrplot::corrplot(cor.num)
+```
+
+**PCA Analysis:**
+
+```{r}
+library("factoextra")
+PCA.comp<- prcomp(data.n)
+fviz_eig(PCA.comp, main = "PCA Plot")
+summary(PCA.comp)
+```
+
+It is observed that the first 3 features have above 10% variance and that is the reason why I have included them even thought they have very low correlation.
+
+```{r}
+#Selecting variable columns, ignoring the columns with very high and very low correlation
+vars <- c(1:5,9,10,12,13,14,16,17,18)
+```
+
+
+```{r}
+# Obtaining data for the models with the extracted features
+data.var <- as.data.frame(newdata[vars])
+data.var$Category <- as.factor(data.var$Category)
+```
+
+# Modeling
+
+I have focused on the caret package for builing the models as they have the ease to cross-validate and tune the models while training them. 
+
+**Splitting the data:**
+
+The data is splt into 80-20 proportion with each disease category equally represented in each set. The validation data will be used in the hold-out validation.
+
+```{r}
+set.seed(1010)
+library(caret)
+sample <- createDataPartition(data.var$Category, p = 0.8, list = FALSE) 
+train <- data.var[sample,]
+valid <- data.var[-sample,]
+```
+
+```{r}
+#Creating factors or the disease category in the training and validation set
+train$Category <- as.factor(as.character(train$Category))
+valid$Category <- as.factor(as.character(valid$Category))
+```
+
+# Model Selection
+
+Since, the majority of the features in the dataset are categorical and I have not dummy coded the features. The best suited models would be naive bayes, decision trees and neural network. These models are good when it comes to handling categorical vairables.
+
+**k-fold cross validation:**
+All the models have implementation of k-fold cross validation with 10 folds
+
+**Metric:**
+All the models are compared on the Accuracy metric. Since, the models are used for classification they cannot be compared on the basis of RMSE/MAD. The models will be compared on the value of Kappa and Accuracy.
+
+**Naive Bayes Classifier**
+
+```{r, warning=FALSE}
+#NAIVE BAYES
+set.seed(1010)
+library(caret)
+
+# Naive Bayes model
+nb.mod <- train(Category ~ ., data=train, method = "naive_bayes", metric = "Accuracy",
+                 trControl= trainControl(method = "cv", number = 10 ))
+# Hold out validation
+nb.pred <- predict(nb.mod, valid)
+
+nb.output <- confusionMatrix(valid$Category,nb.pred)
+nb.output
+
+nb.accuracy <- nb.output$overall[[1]]
+nb.kappa <- nb.output$overall[[2]]
+nb.lower.ci <- nb.output$overall[[3]]
+nb.upper.ci <- nb.output$overall[[4]]
+
+```
+It is observed that the accuracy of the model is just 50% and that the model is not a good model based on the kappa value.
+
+**Decision Tree Classifier**
+
+```{r}
+set.seed(1010)
+
+tune_grid <- expand.grid(cp=seq(0,0.5,0.05))
+
+# Decision tree using rpart
+t.mod <- train(Category ~ ., data=train,
+               method = "rpart", metric = "Accuracy",
+               trControl = trainControl(method = "cv", number = 10 ),
+               tuneGrid = tune_grid)
+
+#Hold-out validation
+t.pred <- predict(t.mod,valid)
+
+t.output <- confusionMatrix(valid$Category,t.pred)
+t.output
+
+tree.accuracy <- t.output$overall[[1]]
+tree.kappa <- t.output$overall[[2]]
+t.lower.ci <- t.output$overall[[3]]
+t.upper.ci <- t.output$overall[[4]]
+```
+
+It is observed that the accuracy of the model is 61.54% and that the model is a fair model based on the kappa value.
+
+```{r}
+# Decision tree Plot
+rpart.plot::rpart.plot(t.mod$finalModel)
+```
+
+It is observed here that the FaceExpression feature is the one with the highest feature importance and is the root of the tree. The interior nodes consists of PauseDuration and RelativeLoudness with decreaing feature importance. The leaves give the predicted diease category.
+
+**Neural Network Classifier**
+
+```{r, warning= FALSE}
+set.seed(100)
+# Neural network classifier
+t.grid <- expand.grid(size=5,decay=0.2)
+nnmodel <- train(train[,-1], train$Category, method = "nnet", metric = "Accuracy",
+                 trControl= trainControl(method = "cv", number = 10 ),
+                 tuneGrid = t.grid)
+
+#Hold-out validation
+nnprediction <- predict(nnmodel, valid)
+
+nnet.output <- confusionMatrix(nnprediction, valid$Category)
+nnet.output
+
+nnet.accuracy <- nnet.output$overall[[1]]
+nnet.kappa <- nnet.output$overall[[2]]
+nnet.lower.ci <- nnet.output$overall[[3]]
+nnet.upper.ci <- nnet.output$overall[[4]]
+
+
+```
+It is observed that the accuracy of the model is just 76.92% and that the model is a good model based on the kappa value.
+
+**Feature Importance using Random forest model**
+
+```{r}
+set.seed(100)
+library(randomForest)
+fit <- randomForest(Category ~ .,data = data.var)
+# Feature importance value
+importance(fit)
+# Plot for the importance of features
+varImpPlot(fit)
+```
+
+It is observed that the feature: FaceExpression, PauseDuration, SpeechEntropyTime, RelativeLoudness , AccSpeechTime, VoicedIntervalDuration, Decay, RateOfSpeech and UnvoicedStopDuration are the most important features which could be used as Early Biomarkers of prediction of Parkinsons disease.
+
+When comparing the top three features to that obtained by the decision tree model are the same and those obtained from the random forest model.
+
+**Stacked Ensemble Model**
+
+```{r}
+# The predicted data from all the models is ensembled
+ensemble.data <- data.frame(nb.pred,t.pred,nnprediction,
+                            Category = valid$Category,
+                            stringsAsFactors = F)
+# The random forest model is used as an ensemble model with 10 fold cross validation
+modelStack <- train(Category ~ ., data = ensemble.data, method = "rf",
+                    trControl= trainControl(method = "cv", number = 10))
+# Hold- out validation
+combPred <- predict(modelStack, ensemble.data)
+
+ensemble.output <- confusionMatrix(combPred, valid$Category)
+ensemble.output
+
+ensemble.accuracy <- ensemble.output$overall[[1]]
+ensemble.kappa <- ensemble.output$overall[[2]]
+ensemble.lower.ci <- ensemble.output$overall[[3]]
+ensemble.upper.ci <- ensemble.output$overall[[4]]
+```
+
+# Outcome
+
+```{r}
+accuracy <- c(nb.accuracy,tree.accuracy,nnet.accuracy,ensemble.accuracy)
+kappa <- c(nb.kappa,tree.kappa,nnet.kappa,ensemble.kappa)
+CI.range <- c((nb.upper.ci-nb.lower.ci),
+              (t.upper.ci-t.lower.ci),
+              (nnet.upper.ci-nnet.lower.ci),
+              (ensemble.upper.ci-ensemble.lower.ci))
+
+compared.data <- cbind(Accuracy = accuracy, Kappa = kappa, CIRange = CI.range)
+colnames(compared.data) <- c("Accuracy", "Kappa", "CI Range")
+rownames(compared.data) <- c("Naive Bayes", "Decision Tree", "Neural Network", "Ensembled model")
+compared.data <- data.frame(compared.data)
+compared.data
+```
+ 
+It is observed that Naive Bayes is not a good classifier for this dataset even though it is known to handle categorical data well. Decision tree is observed to be better than Naive Bayes and Neural Network is observed to be the best classifer in this dataset as it has the highest accuracy, kappa value and a small confidence interval range. Since, we are dealing with data from human study a kappa value of 0.41 is an acceptable value as per certain studies.
+
+When the ensembled model is considered, it gives a good accuracy of 80.76% and a kappa value of 0.70 which a model model and the confidence interval range is the least.
+
+# References
+
+Automated analysis of connected speech reveals early biomarkers of Parkinson’s disease in patients with rapid eye movement sleep behaviour disorder by Jan Hlavnička, Roman Čmejla, Tereza Tykalová, Karel Šonka, Evžen Růžička & Jan Rusz
+
+https://www.nature.com/articles/s41598-017-00047-5
+
+
+Interrater reliability: the kappa statistic by Mary L. McHugh
+
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3900052/
